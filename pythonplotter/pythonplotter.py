@@ -7,6 +7,7 @@ Mostly used for computational chemistry.
 
 
 # Here comes your imports
+import cclib
 
 # Here comes your (few) global variables
 
