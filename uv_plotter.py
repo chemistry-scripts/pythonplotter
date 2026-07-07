@@ -248,4 +248,6 @@ for file in files:
     if generate_Lab:
         xyz = uvvis_to_xyz_color(wavelengths, absorbances)
         rgb = xyz_to_RGB(xyz)
+        Lab = xyz_to_Lab(xyz)
         print(rgb)
+        print(Lab)
