@@ -82,6 +82,15 @@ def generate_spectrum(
     return uv_spectrum
 
 
+def get_colorscheme():
+    # Setup the CIE standard, from the csv file
+    cmf = pd.read_csv("CIE-xyzs.csv", index_col=0, sep=";")
+    cmf.dropna(axis=0, inplace=True)
+    cmf = cmf.astype(float)
+    cmf.columns = ["x", "y", "z", "S"]
+    return cmf
+
+
 def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
     """
     Generate xyz color coordinates according to CIE 1931 standard, using a D65 illuminant
@@ -91,12 +100,7 @@ def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
     Output: xyz data
     """
 
-    # Setup the CIE standard, from the csv file
-    cmf = pd.read_csv("CIE-xyzs.csv", index_col=0, sep=";")
-    cmf.dropna(axis=0, inplace=True)
-    cmf = cmf.astype(float)
-    cmf.columns = ["x", "y", "z", "S"]
-
+    cmf = get_colorscheme()
     # Truncate the UV-Vis according to the CIE standard
     xmin = int(min(cmf.index))
     xmax = int(max(cmf.index))
@@ -177,10 +181,7 @@ def xyz_to_Lab(xyz):
 
     eps = np.power(6 / 29, 3)
 
-    cmf = pd.read_csv("CIE-xyzs.csv", index_col=0, sep=";")
-    cmf.dropna(axis=0, inplace=True)
-    cmf = cmf.astype(float)
-    cmf.columns = ["x", "y", "z", "S"]
+    cmf = get_colorscheme()
 
     Xref = np.sum(cmf["S"] * cmf["x"]) / np.sum(cmf["S"] * cmf["y"])
     Yref = 1
@@ -255,5 +256,6 @@ for file in files_extract:
         xyz = uvvis_to_xyz_color(wavelengths, absorbances, plot_grid)
         rgb = xyz_to_RGB(xyz)
         Lab = xyz_to_Lab(xyz)
+        print(xyz)
         print(rgb)
         print(Lab)
