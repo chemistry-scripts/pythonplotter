@@ -82,7 +82,7 @@ def generate_spectrum(
     return uv_spectrum
 
 
-def uvvis_to_xyz_color(wavelengths, intensities):
+def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
     """
     Generate xyz color coordinates according to CIE 1931 standard, using a D65 illuminant
 
@@ -107,6 +107,10 @@ def uvvis_to_xyz_color(wavelengths, intensities):
     truncated_spectrum = spectrum[
         (xmin <= spectrum["wavelengths"]) & (spectrum["wavelengths"] <= xmax)
     ]
+    
+    # Filter cmf where wavelengths are needed
+    print(spectrum["wavelengths"])
+    print(cmf[float(cmf.index.values) in spectrum["wavelengths"]])
 
     # Convert to transmittance
     Imin = np.min(truncated_spectrum["intensities"])
@@ -178,10 +182,9 @@ def xyz_to_Lab(xyz):
     cmf = cmf.astype(float)
     cmf.columns = ["x", "y", "z", "S"]
 
-    Xref = np.sum(cmf["S"] * cmf["x"]) / np.sum( cmf["S"] * cmf["y"])
+    Xref = np.sum(cmf["S"] * cmf["x"]) / np.sum(cmf["S"] * cmf["y"])
     Yref = 1
-    Zref = np.sum(cmf["S"] * cmf["z"]) / np.sum( cmf["S"] * cmf["y"])
-
+    Zref = np.sum(cmf["S"] * cmf["z"]) / np.sum(cmf["S"] * cmf["y"])
 
     X, Y, Z = xyz
     L = 116 * f(Y / Yref, eps) - 16
@@ -201,13 +204,16 @@ for file in files_root.iterdir():
 
 sigma = 0.4  # Broadening for Gaussians, in eV
 plot_range = [250, 800]  # Range of spectrum to display in nm
-plot_grid = 1  # Grid precision (distance between two generated points)
+plot_grid = 10  # Grid precision (distance between two generated points)
 
 write_data = False
 plot_data = False
 generate_Lab = True
 
-for file in files:
+files_extract = list()
+files_extract.append(files[-1])
+
+for file in files_extract:
     # Extract data and generate the line to plot
     data = extract_data_from_logs(file.as_posix())
     uv_spectrum = generate_spectrum(
@@ -246,7 +252,7 @@ for file in files:
         fig.savefig(img_file, dpi=300)
 
     if generate_Lab:
-        xyz = uvvis_to_xyz_color(wavelengths, absorbances)
+        xyz = uvvis_to_xyz_color(wavelengths, absorbances, plot_grid)
         rgb = xyz_to_RGB(xyz)
         Lab = xyz_to_Lab(xyz)
         print(rgb)
