@@ -113,8 +113,8 @@ def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
     ]
     
     # Filter cmf where wavelengths are needed
-    print(spectrum["wavelengths"])
-    print(cmf[float(cmf.index.values) in spectrum["wavelengths"]])
+    wv_list = [int(i) for i in truncated_spectrum["wavelengths"]]
+    truncated_cmf = cmf.loc[wv_list]
 
     # Convert to transmittance
     Imin = np.min(truncated_spectrum["intensities"])
@@ -124,11 +124,11 @@ def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
 
     trs_I = np.power(10, -new_I)
 
-    X = np.sum(trs_I * cmf["S"] * cmf["x"])
-    Y = np.sum(trs_I * cmf["S"] * cmf["y"])
-    Z = np.sum(trs_I * cmf["S"] * cmf["z"])
-
-    den = np.sum(cmf["S"] * cmf["y"])
+    X = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["x"].to_numpy())
+    Y = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["y"].to_numpy())
+    Z = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["z"].to_numpy())
+    
+    den = np.sum(truncated_cmf["S"] * truncated_cmf["y"])
 
     if den != 0.0:
         X, Y, Z = X / den, Y / den, Z / den
@@ -205,20 +205,17 @@ for file in files_root.iterdir():
 
 sigma = 0.4  # Broadening for Gaussians, in eV
 plot_range = [250, 800]  # Range of spectrum to display in nm
-plot_grid = 10  # Grid precision (distance between two generated points)
+plot_grid = 1  # Grid precision (distance between two generated points)
 
-write_data = False
-plot_data = False
+write_data = True
+plot_data = True
 generate_Lab = True
 
-files_extract = list()
-files_extract.append(files[-1])
-
-for file in files_extract:
+for file in files:
     # Extract data and generate the line to plot
     data = extract_data_from_logs(file.as_posix())
     uv_spectrum = generate_spectrum(
-        data, plot_range, plot_grid, sigma, normalization=False
+        data, plot_range, plot_grid, sigma, normalization=True
     )
 
     # Reformat data
@@ -227,8 +224,6 @@ for file in files_extract:
 
     absorbance_max_idx = np.argmax(absorbances)
     lambda_max = wavelengths[absorbance_max_idx]
-
-    print(file.stem + ": " + str(lambda_max))
 
     if write_data:
         csv_file = Path(files_root, file.stem + ".csv")
@@ -251,11 +246,19 @@ for file in files_extract:
         # Save image
         img_file = Path(files_root, file.stem + ".png")
         fig.savefig(img_file, dpi=300)
+        plot.close()
 
     if generate_Lab:
         xyz = uvvis_to_xyz_color(wavelengths, absorbances, plot_grid)
         rgb = xyz_to_RGB(xyz)
         Lab = xyz_to_Lab(xyz)
-        print(xyz)
-        print(rgb)
-        print(Lab)
+
+        xyz = [str(float(i)) for i in xyz]
+        rgb = [str(int(i)) for i in rgb]
+        Lab = [str(float(i)) for i in Lab]
+
+        with open(Path(files_root, file.stem + "_color.dat"), "w") as f:
+            f.write(file.stem + " xyz = " + ", ".join(xyz) + "\n")
+            f.write(file.stem + " rgb = " + ", ".join(rgb) + "\n")
+            f.write(file.stem + " Lab = " + ", ".join(Lab) + "\n")
+        
