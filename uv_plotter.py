@@ -11,7 +11,7 @@ import matplotlib.pyplot as plot
 from cclib.parser.utils import convertor
 
 
-def extract_data_from_logs(logfile):
+def extract_data_from_logs(logfile, correct_wavelength = False, wv_correction = 0):
     """Extract excited state energies and oscillator strength from logfile
 
     Fill excited_states with tuples containing wavelength in nm and oscillator strength.
@@ -23,6 +23,8 @@ def extract_data_from_logs(logfile):
 
     for wv, os in zip(data.etenergies, data.etoscs):
         wv = convertor(wv, "wavenumber", "nm")
+        if correct_wavelength:
+            wv = wv + wv_correction
         excited_states.append((wv, os))
 
     return excited_states
@@ -203,17 +205,19 @@ for file in files_root.iterdir():
     if file.is_file() and file.suffix == ".log":
         files.append(file)
 
-sigma = 0.4  # Broadening for Gaussians, in eV
+sigma = 0.4  # Broadening for Gaussian functions, in eV
 plot_range = [250, 800]  # Range of spectrum to display in nm
 plot_grid = 1  # Grid precision (distance between two generated points)
+wv_correction = 27 # Wavelength correction shift in nm
 
 write_data = True
 plot_data = True
 generate_Lab = True
+correct_wavelength = True
 
 for file in files:
     # Extract data and generate the line to plot
-    data = extract_data_from_logs(file.as_posix())
+    data = extract_data_from_logs(file.as_posix(), correct_wavelength, wv_correction)
     uv_spectrum = generate_spectrum(
         data, plot_range, plot_grid, sigma, normalization=True
     )
