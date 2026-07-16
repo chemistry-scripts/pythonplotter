@@ -241,8 +241,9 @@ for file in files:
         # Setup the plot
         fig, ax = plot.subplots()
 
-        ax.set_xlabel("Energy (nm)")
+        ax.set_xlabel("Wavelength (nm)")
         ax.set_ylabel("Normalized absorbance")
+        ax.set_xlim(left=plot_range[0], right=plot_range[1])
         ax.set_title(file.stem)
         ax.plot(wavelengths, absorbances)
         fig.show()
