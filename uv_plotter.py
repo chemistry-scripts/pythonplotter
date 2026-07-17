@@ -210,7 +210,7 @@ def xyz_to_Lab(xyz):
 ### Start of main function
 
 # List of files to plot
-files_root = Path("data/test")
+files_root = Path("data/color-prediction-neutral")
 files = list()
 for file in files_root.iterdir():
     if file.is_file() and file.suffix == ".log":
@@ -226,9 +226,9 @@ path_length = 0.1  # Path length in cm
 
 # What to do here
 write_data = True
-plot_data = False
+plot_data = True
 generate_Lab = True
-correct_wavelength = True
+correct_wavelength = False
 normalize_data = False
 
 for file in files:
