@@ -126,11 +126,9 @@ def uvvis_to_xyz_color(
 
         new_I = (truncated_spectrum["intensities"] - Imin) / (Imax - Imin)
     else:
-        print("We are using sample parameters")
         new_I = truncated_spectrum["intensities"] * concentration * length
 
     trs_I = np.power(10, -new_I)
-    print(trs_I)
 
     X = np.sum(
         trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["x"].to_numpy()
