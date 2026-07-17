@@ -1,4 +1,3 @@
-# %% Imports and load files
 import csv
 import math
 from pathlib import Path
@@ -11,7 +10,7 @@ import matplotlib.pyplot as plot
 from cclib.parser.utils import convertor
 
 
-def extract_data_from_logs(logfile, correct_wavelength = False, wv_correction = 0):
+def extract_data_from_logs(logfile, correct_wavelength=False, wv_correction=0):
     """Extract excited state energies and oscillator strength from logfile
 
     Fill excited_states with tuples containing wavelength in nm and oscillator strength.
@@ -93,7 +92,9 @@ def get_colorscheme():
     return cmf
 
 
-def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
+def uvvis_to_xyz_color(
+    wavelengths, intensities, plot_grid, normalize=True, length=1, concentration=1
+):
     """
     Generate xyz color coordinates according to CIE 1931 standard, using a D65 illuminant
 
@@ -113,23 +114,34 @@ def uvvis_to_xyz_color(wavelengths, intensities, plot_grid):
     truncated_spectrum = spectrum[
         (xmin <= spectrum["wavelengths"]) & (spectrum["wavelengths"] <= xmax)
     ]
-    
+
     # Filter cmf where wavelengths are needed
     wv_list = [int(i) for i in truncated_spectrum["wavelengths"]]
     truncated_cmf = cmf.loc[wv_list]
 
     # Convert to transmittance
-    Imin = np.min(truncated_spectrum["intensities"])
-    Imax = np.max(truncated_spectrum["intensities"])
+    if normalize:
+        Imin = np.min(truncated_spectrum["intensities"])
+        Imax = np.max(truncated_spectrum["intensities"])
 
-    new_I = (truncated_spectrum["intensities"] - Imin) / (Imax - Imin)
+        new_I = (truncated_spectrum["intensities"] - Imin) / (Imax - Imin)
+    else:
+        print("We are using sample parameters")
+        new_I = truncated_spectrum["intensities"] * concentration * length
 
     trs_I = np.power(10, -new_I)
+    print(trs_I)
 
-    X = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["x"].to_numpy())
-    Y = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["y"].to_numpy())
-    Z = np.sum(trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["z"].to_numpy())
-    
+    X = np.sum(
+        trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["x"].to_numpy()
+    )
+    Y = np.sum(
+        trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["y"].to_numpy()
+    )
+    Z = np.sum(
+        trs_I.to_numpy() * truncated_cmf["S"].to_numpy() * truncated_cmf["z"].to_numpy()
+    )
+
     den = np.sum(truncated_cmf["S"] * truncated_cmf["y"])
 
     if den != 0.0:
@@ -197,29 +209,35 @@ def xyz_to_Lab(xyz):
     return [L, a, b]
 
 
-# %%
+### Start of main function
+
 # List of files to plot
-files_root = Path("data/color-prediction/")
+files_root = Path("data/test")
 files = list()
 for file in files_root.iterdir():
     if file.is_file() and file.suffix == ".log":
         files.append(file)
 
+# General parameters
 sigma = 0.4  # Broadening for Gaussian functions, in eV
 plot_range = [250, 800]  # Range of spectrum to display in nm
 plot_grid = 1  # Grid precision (distance between two generated points)
-wv_correction = 27 # Wavelength correction shift in nm
+wv_correction = 27  # Wavelength correction shift in nm
+concentration = 0.000275  # Sample concentration
+path_length = 0.1  # Path length in cm
 
+# What to do here
 write_data = True
-plot_data = True
+plot_data = False
 generate_Lab = True
 correct_wavelength = True
+normalize_data = False
 
 for file in files:
     # Extract data and generate the line to plot
     data = extract_data_from_logs(file.as_posix(), correct_wavelength, wv_correction)
     uv_spectrum = generate_spectrum(
-        data, plot_range, plot_grid, sigma, normalization=True
+        data, plot_range, plot_grid, sigma, normalization=normalize_data
     )
 
     # Reformat data
@@ -254,7 +272,14 @@ for file in files:
         plot.close()
 
     if generate_Lab:
-        xyz = uvvis_to_xyz_color(wavelengths, absorbances, plot_grid)
+        xyz = uvvis_to_xyz_color(
+            wavelengths,
+            absorbances,
+            plot_grid,
+            normalize=normalize_data,
+            length=path_length,
+            concentration=concentration,
+        )
         rgb = xyz_to_RGB(xyz)
         Lab = xyz_to_Lab(xyz)
 
@@ -266,4 +291,3 @@ for file in files:
             f.write(file.stem + " xyz = " + ", ".join(xyz) + "\n")
             f.write(file.stem + " rgb = " + ", ".join(rgb) + "\n")
             f.write(file.stem + " Lab = " + ", ".join(Lab) + "\n")
-        
