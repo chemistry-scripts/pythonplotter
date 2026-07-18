@@ -219,12 +219,10 @@ def parse_arguments():
         "--input-dir",
         type=str,
         default="data/color-prediction-neutral",
-        help="Directory containing .log files to process"
+        help="Directory containing .log files to process",
     )
     parser.add_argument(
-        "--file",
-        type=str,
-        help="Single .log file to process (overrides --input-dir)"
+        "--file", type=str, help="Single .log file to process (overrides --input-dir)"
     )
 
     # Spectrum generation parameters
@@ -232,7 +230,7 @@ def parse_arguments():
         "--sigma",
         type=float,
         default=0.4,
-        help="Broadening for Gaussian functions, in eV (default: 0.4)"
+        help="Broadening for Gaussian functions, in eV (default: 0.4)",
     )
     parser.add_argument(
         "--plot-range",
@@ -240,19 +238,19 @@ def parse_arguments():
         nargs=2,
         default=[250, 800],
         metavar=("MIN", "MAX"),
-        help="Range of spectrum to display in nm (default: 250 800)"
+        help="Range of spectrum to display in nm (default: 250 800)",
     )
     parser.add_argument(
         "--plot-grid",
         type=int,
         default=1,
-        help="Grid precision (distance between two generated points) (default: 1)"
+        help="Grid precision (distance between two generated points) (default: 1)",
     )
     parser.add_argument(
         "--wv-correction",
         type=int,
         default=27,
-        help="Wavelength correction shift in nm (default: 27)"
+        help="Wavelength correction shift in nm (default: 27)",
     )
 
     # Color calculation parameters
@@ -260,13 +258,13 @@ def parse_arguments():
         "--concentration",
         type=float,
         default=0.000275,
-        help="Sample concentration (default: 0.000275)"
+        help="Sample concentration (default: 0.000275)",
     )
     parser.add_argument(
         "--path-length",
         type=float,
         default=0.1,
-        help="Path length in cm (default: 0.1)"
+        help="Path length in cm (default: 0.1)",
     )
 
     # Output options
@@ -274,54 +272,56 @@ def parse_arguments():
         "--write-data",
         action="store_true",
         default=True,
-        help="Write CSV data files (default: True)"
+        help="Write CSV data files (default: True)",
     )
     parser.add_argument(
         "--no-write-data",
         action="store_false",
         dest="write_data",
-        help="Disable writing CSV data files"
+        help="Disable writing CSV data files",
     )
     parser.add_argument(
         "--plot-data",
         action="store_true",
         default=True,
-        help="Generate plots (default: True)"
+        help="Generate plots (default: True)",
     )
     parser.add_argument(
         "--no-plot-data",
         action="store_false",
         dest="plot_data",
-        help="Disable generating plots"
+        help="Disable generating plots",
     )
     parser.add_argument(
         "--generate-Lab",
         action="store_true",
         default=True,
-        help="Generate Lab color coordinates (default: True)"
+        help="Generate Lab color coordinates (default: True)",
     )
     parser.add_argument(
         "--no-generate-Lab",
         action="store_false",
         dest="generate_Lab",
-        help="Disable generating Lab color coordinates"
+        help="Disable generating Lab color coordinates",
     )
     parser.add_argument(
         "--correct-wavelength",
         action="store_true",
         default=False,
-        help="Apply wavelength correction (default: False)"
+        help="Apply wavelength correction (default: False)",
     )
     parser.add_argument(
         "--normalize-data",
         action="store_true",
         default=False,
-        help="Normalize data (default: False)"
+        help="Normalize data (default: False)",
     )
 
     return parser.parse_args()
 
+
 ### Start of main function
+
 
 def main():
     args = parse_arguments()
@@ -354,7 +354,9 @@ def main():
 
     for file in files:
         # Extract data and generate the line to plot
-        data = extract_data_from_logs(file.as_posix(), correct_wavelength, wv_correction)
+        data = extract_data_from_logs(
+            file.as_posix(), correct_wavelength, wv_correction
+        )
         uv_spectrum = generate_spectrum(
             data, plot_range, plot_grid, sigma, normalization=normalize_data
         )
