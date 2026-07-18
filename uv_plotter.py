@@ -1,5 +1,6 @@
 import csv
 import math
+import argparse
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -41,7 +42,7 @@ def generate_spectrum(
     """
 
     # Generate the range of wavelengths
-    grid = range(plt_range[0], plot_range[1] + 1, grid_size)
+    grid = range(plt_range[0], plt_range[1] + 1, grid_size)
 
     # Generate data for each point
     uv_spectrum = list()
@@ -207,85 +208,208 @@ def xyz_to_Lab(xyz):
     return [L, a, b]
 
 
-### Start of main function
-
-# List of files to plot
-files_root = Path("data/color-prediction-neutral")
-files = list()
-for file in files_root.iterdir():
-    if file.is_file() and file.suffix == ".log":
-        files.append(file)
-
-# General parameters
-sigma = 0.4  # Broadening for Gaussian functions, in eV
-plot_range = [250, 800]  # Range of spectrum to display in nm
-plot_grid = 1  # Grid precision (distance between two generated points)
-wv_correction = 27  # Wavelength correction shift in nm
-concentration = 0.000275  # Sample concentration
-path_length = 0.1  # Path length in cm
-
-# What to do here
-write_data = True
-plot_data = True
-generate_Lab = True
-correct_wavelength = False
-normalize_data = False
-
-for file in files:
-    # Extract data and generate the line to plot
-    data = extract_data_from_logs(file.as_posix(), correct_wavelength, wv_correction)
-    uv_spectrum = generate_spectrum(
-        data, plot_range, plot_grid, sigma, normalization=normalize_data
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(
+        description="UV-Vis Spectrum Plotter - Generate spectra and color coordinates from log files"
     )
 
-    # Reformat data
-    wavelengths = [point[0] for point in uv_spectrum]
-    absorbances = [point[1] for point in uv_spectrum]
+    # File input
+    parser.add_argument(
+        "--input-dir",
+        type=str,
+        default="data/color-prediction-neutral",
+        help="Directory containing .log files to process"
+    )
+    parser.add_argument(
+        "--file",
+        type=str,
+        help="Single .log file to process (overrides --input-dir)"
+    )
 
-    absorbance_max_idx = np.argmax(absorbances)
-    lambda_max = wavelengths[absorbance_max_idx]
+    # Spectrum generation parameters
+    parser.add_argument(
+        "--sigma",
+        type=float,
+        default=0.4,
+        help="Broadening for Gaussian functions, in eV (default: 0.4)"
+    )
+    parser.add_argument(
+        "--plot-range",
+        type=int,
+        nargs=2,
+        default=[250, 800],
+        metavar=("MIN", "MAX"),
+        help="Range of spectrum to display in nm (default: 250 800)"
+    )
+    parser.add_argument(
+        "--plot-grid",
+        type=int,
+        default=1,
+        help="Grid precision (distance between two generated points) (default: 1)"
+    )
+    parser.add_argument(
+        "--wv-correction",
+        type=int,
+        default=27,
+        help="Wavelength correction shift in nm (default: 27)"
+    )
 
-    if write_data:
-        csv_file = Path(files_root, file.stem + ".csv")
-        with open(csv_file, "w") as f:
-            writer = csv.writer(f, delimiter=";")
-            writer.writerows(zip(wavelengths, absorbances))
-        with open(Path(files_root, file.stem + "_max.dat"), "w") as f:
-            f.write(file.stem + " lambda_max = " + str(lambda_max) + "\n")
+    # Color calculation parameters
+    parser.add_argument(
+        "--concentration",
+        type=float,
+        default=0.000275,
+        help="Sample concentration (default: 0.000275)"
+    )
+    parser.add_argument(
+        "--path-length",
+        type=float,
+        default=0.1,
+        help="Path length in cm (default: 0.1)"
+    )
 
-    if plot_data:
-        # Setup the plot
-        fig, ax = plot.subplots()
+    # Output options
+    parser.add_argument(
+        "--write-data",
+        action="store_true",
+        default=True,
+        help="Write CSV data files (default: True)"
+    )
+    parser.add_argument(
+        "--no-write-data",
+        action="store_false",
+        dest="write_data",
+        help="Disable writing CSV data files"
+    )
+    parser.add_argument(
+        "--plot-data",
+        action="store_true",
+        default=True,
+        help="Generate plots (default: True)"
+    )
+    parser.add_argument(
+        "--no-plot-data",
+        action="store_false",
+        dest="plot_data",
+        help="Disable generating plots"
+    )
+    parser.add_argument(
+        "--generate-Lab",
+        action="store_true",
+        default=True,
+        help="Generate Lab color coordinates (default: True)"
+    )
+    parser.add_argument(
+        "--no-generate-Lab",
+        action="store_false",
+        dest="generate_Lab",
+        help="Disable generating Lab color coordinates"
+    )
+    parser.add_argument(
+        "--correct-wavelength",
+        action="store_true",
+        default=False,
+        help="Apply wavelength correction (default: False)"
+    )
+    parser.add_argument(
+        "--normalize-data",
+        action="store_true",
+        default=False,
+        help="Normalize data (default: False)"
+    )
 
-        ax.set_xlabel("Wavelength (nm)")
-        ax.set_ylabel("Normalized absorbance")
-        ax.set_xlim(left=plot_range[0], right=plot_range[1])
-        ax.set_title(file.stem)
-        ax.plot(wavelengths, absorbances)
-        fig.show()
+    return parser.parse_args()
 
-        # Save image
-        img_file = Path(files_root, file.stem + ".png")
-        fig.savefig(img_file, dpi=300)
-        plot.close()
+### Start of main function
 
-    if generate_Lab:
-        xyz = uvvis_to_xyz_color(
-            wavelengths,
-            absorbances,
-            plot_grid,
-            normalize=normalize_data,
-            length=path_length,
-            concentration=concentration,
+def main():
+    args = parse_arguments()
+
+    # List of files to plot
+    if args.file:
+        files_root = Path(args.file).parent
+        files = [Path(args.file)] if Path(args.file).suffix == ".log" else []
+    else:
+        files_root = Path(args.input_dir)
+        files = list()
+        for file in files_root.iterdir():
+            if file.is_file() and file.suffix == ".log":
+                files.append(file)
+
+    # General parameters
+    sigma = args.sigma
+    plot_range = args.plot_range
+    plot_grid = args.plot_grid
+    wv_correction = args.wv_correction
+    concentration = args.concentration
+    path_length = args.path_length
+
+    # What to do here
+    write_data = args.write_data
+    plot_data = args.plot_data
+    generate_Lab = args.generate_Lab
+    correct_wavelength = args.correct_wavelength
+    normalize_data = args.normalize_data
+
+    for file in files:
+        # Extract data and generate the line to plot
+        data = extract_data_from_logs(file.as_posix(), correct_wavelength, wv_correction)
+        uv_spectrum = generate_spectrum(
+            data, plot_range, plot_grid, sigma, normalization=normalize_data
         )
-        rgb = xyz_to_RGB(xyz)
-        Lab = xyz_to_Lab(xyz)
 
-        xyz = [str(float(i)) for i in xyz]
-        rgb = [str(int(i)) for i in rgb]
-        Lab = [str(float(i)) for i in Lab]
+        # Reformat data
+        wavelengths = [point[0] for point in uv_spectrum]
+        absorbances = [point[1] for point in uv_spectrum]
 
-        with open(Path(files_root, file.stem + "_color.dat"), "w") as f:
-            f.write(file.stem + " xyz = " + ", ".join(xyz) + "\n")
-            f.write(file.stem + " rgb = " + ", ".join(rgb) + "\n")
-            f.write(file.stem + " Lab = " + ", ".join(Lab) + "\n")
+        absorbance_max_idx = np.argmax(absorbances)
+        lambda_max = wavelengths[absorbance_max_idx]
+
+        if write_data:
+            csv_file = Path(files_root, file.stem + ".csv")
+            with open(csv_file, "w") as f:
+                writer = csv.writer(f, delimiter=";")
+                writer.writerows(zip(wavelengths, absorbances))
+            with open(Path(files_root, file.stem + "_max.dat"), "w") as f:
+                f.write(file.stem + " lambda_max = " + str(lambda_max) + "\n")
+
+        if plot_data:
+            # Setup the plot
+            fig, ax = plot.subplots()
+
+            ax.set_xlabel("Wavelength (nm)")
+            ax.set_ylabel("Normalized absorbance")
+            ax.set_xlim(left=plot_range[0], right=plot_range[1])
+            ax.set_title(file.stem)
+            ax.plot(wavelengths, absorbances)
+            fig.show()
+
+            # Save image
+            img_file = Path(files_root, file.stem + ".png")
+            fig.savefig(img_file, dpi=300)
+            plot.close()
+
+        if generate_Lab:
+            xyz = uvvis_to_xyz_color(
+                wavelengths,
+                absorbances,
+                plot_grid,
+                normalize=normalize_data,
+                length=path_length,
+                concentration=concentration,
+            )
+            rgb = xyz_to_RGB(xyz)
+            Lab = xyz_to_Lab(xyz)
+
+            xyz = [str(float(i)) for i in xyz]
+            rgb = [str(int(i)) for i in rgb]
+            Lab = [str(float(i)) for i in Lab]
+
+            with open(Path(files_root, file.stem + "_color.dat"), "w") as f:
+                f.write(file.stem + " xyz = " + ", ".join(xyz) + "\n")
+                f.write(file.stem + " rgb = " + ", ".join(rgb) + "\n")
+                f.write(file.stem + " Lab = " + ", ".join(Lab) + "\n")
+
+    if __name__ == "__main__":
+        main()
