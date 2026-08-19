@@ -1,14 +1,14 @@
+import argparse
 import csv
 import math
-import argparse
 from pathlib import Path
-import numpy as np
-import pandas as pd
 
 import cclib
-import scipy.constants as constants
 import matplotlib.pyplot as plot
+import numpy as np
+import pandas as pd
 from cclib.parser.utils import convertor
+from scipy import constants
 
 
 def extract_data_from_logs(logfile, correct_wavelength=False, wv_correction=0):
@@ -45,7 +45,7 @@ def generate_spectrum(
     grid = range(plt_range[0], plt_range[1] + 1, grid_size)
 
     # Generate data for each point
-    uv_spectrum = list()
+    uv_spectrum = []
 
     electron_charge = 4.803204e-10
     electron_mass = 9.10938e-31
@@ -332,7 +332,7 @@ def main():
         files = [Path(args.file)] if Path(args.file).suffix == ".log" else []
     else:
         files_root = Path(args.input_dir)
-        files = list()
+        files = []
         for file in files_root.iterdir():
             if file.is_file() and file.suffix == ".log":
                 files.append(file)
