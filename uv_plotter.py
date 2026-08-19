@@ -16,7 +16,7 @@ def extract_data_from_logs(logfile, correct_wavelength=False, wv_correction=0):
 
     Fill excited_states with tuples containing wavelength in nm and oscillator strength.
     """
-    excited_states = list()
+    excited_states = []
 
     parser = cclib.io.ccopen(logfile)
     data = parser.parse()
