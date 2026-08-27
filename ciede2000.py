@@ -1,7 +1,8 @@
-from math import pi, sqrt, atan2, sin, exp
+from math import atan2, exp, pi, sin, sqrt
 
 # This function written in Python is not affiliated with the CIE (International Commission on Illumination),
 # and is released into the public domain. It is provided "as is" without any warranty, express or implied.
+
 
 # The classic CIE ΔE2000 implementation, which operates on two L*a*b* colors, and returns their difference.
 # "l" ranges from 0 to 100, while "a" and "b" are unbounded and commonly clamped to the range of -128 to 127.
@@ -33,8 +34,8 @@ def ciede_2000(l_1, a_1, b_1, l_2, a_2, b_2):
     g = 1.0 + 0.5 * (1.0 - sqrt(c_prime_avg_7 / (c_prime_avg_7 + CONST_25_7)))
 
     # Corrected chroma values
-    c_1 = sqrt((a_1 * g)**2 + b_1**2)
-    c_2 = sqrt((a_2 * g)**2 + b_2**2)
+    c_1 = sqrt((a_1 * g) ** 2 + b_1**2)
+    c_2 = sqrt((a_2 * g) ** 2 + b_2**2)
 
     # Step 2: Calculate hue angles (h')
     h_prime_1 = atan2(b_1, a_1 * g)
@@ -67,12 +68,18 @@ def ciede_2000(l_1, a_1, b_1, l_2, a_2, b_2):
     c_avg = (c_1 + c_2) * 0.5
     p = 36.0 * h_m - 55.0 * pi
     c_avg_7 = c_avg**7
-    r_t = -2.0 * sqrt(c_avg_7 / (c_avg_7 + CONST_25_7)) * sin(pi / 3.0 * exp(p**2 / (-25.0 * pi**2)))
+    r_t = (
+        -2.0
+        * sqrt(c_avg_7 / (c_avg_7 + CONST_25_7))
+        * sin(pi / 3.0 * exp(p**2 / (-25.0 * pi**2)))
+    )
 
     # Step 5: Calculate lightness difference component
     l_avg = (l_1 + l_2) * 0.5
-    l_diff_squared = (l_avg - 50.0)**2
-    delta_l = (l_2 - l_1) / (k_l * (1.0 + 0.015 * l_diff_squared / sqrt(20.0 + l_diff_squared)))
+    l_diff_squared = (l_avg - 50.0) ** 2
+    delta_l = (l_2 - l_1) / (
+        k_l * (1.0 + 0.015 * l_diff_squared / sqrt(20.0 + l_diff_squared))
+    )
 
     # Step 6: Calculate chroma difference component
     c_sum = c_1 + c_2
@@ -93,6 +100,7 @@ def ciede_2000(l_1, a_1, b_1, l_2, a_2, b_2):
     # Returning the square root ensures that dE00 accurately reflects the
     # geometric distance in color space, which can range from 0 to around 185.
     return sqrt(delta_l**2 + delta_h**2 + delta_c**2 + delta_c * delta_h * r_t)
+
 
 # GitHub Project : https://github.com/michel-leonard/ciede2000-color-matching
 #   Online Tests : https://michel-leonard.github.io/ciede2000-color-matching
