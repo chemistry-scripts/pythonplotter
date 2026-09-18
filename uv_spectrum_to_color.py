@@ -288,31 +288,26 @@ def parse_arguments():
     parser.add_argument(
         "--write-data",
         action="store_true",
-        default=True,
-        help="Write CSV data files (default: True)",
+        help="Write CSV data files (default: False)",
     )
     parser.add_argument(
         "--plot-data",
         action="store_true",
-        default=True,
-        help="Generate plots (default: True)",
+        help="Generate plots (default: False)",
     )
     parser.add_argument(
         "--generate-Lab",
         action="store_true",
-        default=True,
-        help="Generate Lab color coordinates (default: True)",
+        help="Generate Lab color coordinates (default: False)",
     )
     parser.add_argument(
         "--correct-wavelength",
         action="store_true",
-        default=False,
         help="Apply wavelength correction (default: False)",
     )
     parser.add_argument(
         "--normalize-data",
         action="store_true",
-        default=False,
         help="Normalize data (default: False)",
     )
 
@@ -335,7 +330,7 @@ def main():
         files_root = Path(args.input_dir)
         files = []
         for file in files_root.iterdir():
-            if file.is_file() and file.suffix == ".log":
+            if file.is_file() and file.suffix == ".log" or file.suffix == ".csv":
                 files.append(file)
 
     if args.file_type == "experimental":
