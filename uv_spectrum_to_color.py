@@ -369,6 +369,12 @@ def main():
         wavelengths = [point[0] for point in uv_spectrum]
         absorbances = [point[1] for point in uv_spectrum]
 
+        # Normalize absorbances if required
+        if normalize_data:
+            max = np.max(absorbances)
+            min = np.min(absorbances)
+            absorbances = [(a - min) / (max - min) for a in absorbances]
+
         absorbance_max_idx = np.argmax(absorbances)
         lambda_max = wavelengths[absorbance_max_idx]
 
