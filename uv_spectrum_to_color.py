@@ -322,15 +322,13 @@ def main():
     if args.file:
         files_root = Path(args.file).parent
         files = (
-            [Path(args.file)]
-            if Path(args.file).suffix == ".log" or Path(args.file).suffix == ".csv"
-            else []
+            [Path(args.file)] if Path(args.file).suffix == ".log" or Path(args.file).suffix == ".csv" or Path(args.file).suffix == ".out" else []
         )
     else:
         files_root = Path(args.input_dir)
         files = []
         for file in files_root.iterdir():
-            if file.is_file() and file.suffix == ".log" or file.suffix == ".csv":
+            if file.is_file() and file.suffix == ".log" or file.suffix == ".out" or file.suffix == ".csv":
                 files.append(file)
 
     if args.file_type == "experimental":
