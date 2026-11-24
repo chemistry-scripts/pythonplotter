@@ -1,120 +1,131 @@
 import argparse
 import csv
-import math
+import logging
+import sys
 from pathlib import Path
 
 import cclib
-import matplotlib.pyplot as plot
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from cclib.parser.utils import convertor
 from scipy import constants
 
+# Colour-matching function data lives next to this script, not in the CWD.
+_CIE_FILE = Path(__file__).with_name("CIE-xyzs.csv")
+_cmf_cache = None  # loaded lazily and cached (it is read several times)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s",
+    stream=sys.stderr,
+)
+logger = logging.getLogger("uv_plotter")
+
 
 def extract_data_from_logs(logfile, correct_wavelength=False, wv_correction=0):
-    """Extract excited state energies and oscillator strength from logfile
+    """Extract excited state energies and oscillator strength from a logfile.
 
-    Fill excited_states with tuples containing wavelength in nm and oscillator strength.
+    Returns a list of ``(wavelength_nm, oscillator_strength)`` tuples.
+    Raises ``ValueError`` if no excited-state data can be found.
     """
-    excited_states = []
-
     parser = cclib.io.ccopen(logfile)
     data = parser.parse()
 
-    for wv, os in zip(data.etenergies, data.etoscs):
+    if data is None or data.etenergies is None or data.etoscs is None:
+        raise ValueError(f"no excited-state data found in {logfile}")
+
+    excited_states = []
+    for wv, osc in zip(data.etenergies, data.etoscs):
         wv = convertor(wv, "wavenumber", "nm")
         if correct_wavelength:
             wv = wv + wv_correction
-        excited_states.append((wv, os))
-
+        excited_states.append((float(wv), float(osc)))
     return excited_states
 
 
-def extract_spectrum(csvfile):
-    """Extract spectrum from csv file"""
-    data = pd.read_csv(csvfile, sep=";").to_numpy()
-    uv_spectrum = []
-    for line in data:
-        uv_spectrum.append((line[0], line[1]))
-    return uv_spectrum
+def extract_spectrum(csvfile, delimiter=";", has_header=False):
+    """Read an experimental spectrum (wavelength, absorbance) from a CSV file.
+
+    By default a ``;`` separator and no header row are assumed. Set
+    ``has_header=True`` to skip the first line.
+    """
+    header = 0 if has_header else None
+    data = pd.read_csv(csvfile, sep=delimiter, header=header).to_numpy()
+    if data.shape[1] < 2:
+        raise ValueError(f"expected at least 2 columns in {csvfile}")
+
+    return [(float(row[0]), float(row[1])) for row in data]
 
 
 def generate_spectrum(
     excited_states, plt_range, grid_size, sigma=0.4, normalization=True
 ):
-    """Generate gaussian functions for each excitation energy, and sum them all
+    """Generate a Gaussian-broadened absorption spectrum.
 
-    - Generate a range of wavelengths to use to generate the spectrum
-    - At each point, compute the absorbance including the contribution of all excitations
-    - Normalize according to the max absorbance if necessary
-    - Return a 2D line ready to be plotted.
+    - Builds a wavelength grid between ``plt_range[0]`` and ``plt_range[1]``
+      with step ``grid_size``.
+    - At each point, sums the Gaussian contribution of every excitation.
+    - Optionally normalizes so the peak absorbance equals 1.
+    - Returns a list of ``(wavelength, absorbance)`` tuples.
     """
-
-    # Generate the range of wavelengths
     grid = range(plt_range[0], plt_range[1] + 1, grid_size)
 
-    # Generate data for each point
-    uv_spectrum = []
+    if not excited_states:
+        return [(point, 0.0) for point in grid]
 
-    electron_charge = 4.803204e-10
-    electron_mass = 9.10938e-31
-
-    cnst = (
-        math.sqrt(math.pi)
-        * electron_charge**2
-        * constants.Avogadro
-        / (1000 * math.log(10) * constants.c**2 * electron_mass)
-    )
+    # Peak amplitude constant and sigma converted from eV to wavenumber (cm^-1).
     cnst = 1.3062974e8
+    sigma_wavenumber = (
+        1e9 * constants.Planck * constants.c / constants.eV / sigma
+    )  # cm^-1
 
-    sigma = (
-        np.power(10, 9) * constants.Planck * constants.c / 1.602176634e-19 / sigma
-    )  # convert to wavenumber
-
+    uv_spectrum = []
     for point in grid:
         fit = 0.0
-        for wv, os in excited_states:
+        for wv, osc in excited_states:
             fit += (
                 cnst
-                * os
-                / sigma
-                * np.exp(-np.power((10**7 / point - 10**7 / wv) / (sigma), 2))
+                * osc
+                / sigma_wavenumber
+                * np.exp(-np.power((1e7 / point - 1e7 / wv) / sigma_wavenumber, 2))
             )
-        uv_spectrum += [(point, fit)]
+        uv_spectrum.append((float(point), float(fit)))
 
-    # Normalize if requested
     if normalization:
-        max_energy = max(point[1] for point in uv_spectrum)  # Retrieve max energy
-        uv_spectrum = [
-            (wavelength, energy / max_energy) for (wavelength, energy) in uv_spectrum
-        ]
+        max_absorbance = max(value for _, value in uv_spectrum)
+        if max_absorbance > 0:
+            uv_spectrum = [
+                (wavelength, value / max_absorbance)
+                for (wavelength, value) in uv_spectrum
+            ]
 
-    # Return final spectrum line
     return uv_spectrum
 
 
 def get_colorscheme():
-    # Setup the CIE standard, from the csv file
-    cmf = pd.read_csv("CIE-xyzs.csv", index_col=0, sep=";")
-    cmf.dropna(axis=0, inplace=True)
-    cmf = cmf.astype(float)
-    cmf.columns = ["x", "y", "z", "S"]
-    return cmf
+    """Return the cached CIE 1931 standard observer colour-matching functions."""
+    global _cmf_cache
+    if _cmf_cache is None:
+        cmf = pd.read_csv(_CIE_FILE, index_col=0, sep=";")
+        cmf.dropna(axis=0, inplace=True)
+        cmf = cmf.astype(float)
+        cmf.columns = ["x", "y", "z", "S"]
+        _cmf_cache = cmf
+    return _cmf_cache
 
 
 def uvvis_to_xyz_color(
-    wavelengths, intensities, plot_grid, normalize=True, length=1, concentration=1
+    wavelengths, intensities, normalize=True, length=1, concentration=1
 ):
+    """Generate xyz color coordinates (CIE 1931, D65 illuminant).
+
+    Input: UV-Vis spectrum with wavelengths in nm and absorbance values.
+    Output: ``[X, Y, Z]`` coordinates.
     """
-    Generate xyz color coordinates according to CIE 1931 standard, using a D65 illuminant
-
-    Input: UV-Vis spectrum with wavelengths in nm and absorbance absolute values
-
-    Output: xyz data
-    """
-
     cmf = get_colorscheme()
-    # Truncate the UV-Vis according to the CIE standard
+
+    # Truncate the UV-Vis according to the CIE standard range.
     xmin = int(min(cmf.index))
     xmax = int(max(cmf.index))
 
@@ -125,16 +136,18 @@ def uvvis_to_xyz_color(
         (xmin <= spectrum["wavelengths"]) & (spectrum["wavelengths"] <= xmax)
     ]
 
-    # Filter cmf where wavelengths are needed
+    # Filter the colour-matching functions at the required wavelengths.
     wv_list = [int(i) for i in truncated_spectrum["wavelengths"]]
     truncated_cmf = cmf.loc[wv_list]
 
-    # Convert to transmittance
+    # Convert absorbance to transmittance.
     if normalize:
         Imin = np.min(truncated_spectrum["intensities"])
         Imax = np.max(truncated_spectrum["intensities"])
-
-        new_I = (truncated_spectrum["intensities"] - Imin) / (Imax - Imin)
+        if Imax == Imin:  # flat spectrum -> avoid division by zero
+            new_I = np.zeros_like(truncated_spectrum["intensities"])
+        else:
+            new_I = (truncated_spectrum["intensities"] - Imin) / (Imax - Imin)
     else:
         new_I = truncated_spectrum["intensities"] * concentration * length
 
@@ -154,21 +167,12 @@ def uvvis_to_xyz_color(
 
     if den != 0.0:
         X, Y, Z = X / den, Y / den, Z / den
-    xyz = [X, Y, Z]
 
-    return xyz
+    return [X, Y, Z]
 
 
 def xyz_to_RGB(xyz):
-    """
-    Conversion of xyz coordinates into RGB coordinates.
-
-    - xyz: list: xyz coordinates.
-
-    return:
-    - np.array (3,): rgb coordinates.
-    """
-
+    """Convert xyz coordinates into sRGB coordinates (0-255 integers)."""
     xyz = np.array(xyz).reshape(-1, 1)
 
     M = np.array(
@@ -187,14 +191,7 @@ def xyz_to_RGB(xyz):
 
 
 def xyz_to_Lab(xyz):
-    """
-    Conversion of xyz coordinates into Lab coordinates.
-
-    - xyz: list: xyz coordinates.
-
-    return:
-    - np.array (3,): Lab coordinates.
-    """
+    """Convert xyz coordinates into CIE L*a*b* coordinates (D65 white point)."""
 
     def f(T, eps):
         if T > eps:
@@ -217,37 +214,96 @@ def xyz_to_Lab(xyz):
     return [L, a, b]
 
 
+def normalize_spectrum(wavelengths, absorbances):
+    """Min-max normalize absorbances; returns new (wavelengths, absorbances)."""
+    values = np.asarray(absorbances, dtype=float)
+    lo, hi = values.min(), values.max()
+    if hi == lo:  # flat spectrum
+        return list(wavelengths), np.zeros_like(values).tolist()
+    normalized = (values - lo) / (hi - lo)
+    return list(wavelengths), normalized.tolist()
+
+
+# The two file types are mutually exclusive: a computation is a .log/.out file,
+# an experimental spectrum is a .csv file. Keeping them separate avoids, e.g.,
+# picking up experimental CSV files when scanning a directory for computations.
+_INPUT_SUFFIXES = {
+    "computation": {".log", ".out"},
+    "experimental": {".csv"},
+}
+
+
+def find_input_files(args):
+    """Resolve the list of input files from the CLI arguments.
+
+    Files are filtered by ``--file-type`` so that the two cases never mix:
+    only ``.log``/``.out`` are returned for inputs that are treated as
+    computations, and only ``.csv`` for experimental spectra.
+    """
+    allowed = _INPUT_SUFFIXES[args.file_type]
+
+    if args.file:
+        path = Path(args.file)
+        if not path.is_file() or path.suffix.lower() not in allowed:
+            logger.error(
+                "invalid input file '%s' for file type '%s' (expected %s)",
+                args.file,
+                args.file_type,
+                ", ".join(sorted(allowed)),
+            )
+            return path.parent, []
+        return path.parent, [path]
+
+    root = Path(args.input_dir)
+    if not root.is_dir():
+        logger.error("input directory does not exist: %s", root)
+        return root, []
+
+    all_files = [f for f in root.iterdir() if f.is_file()]
+    files = [f for f in all_files if f.suffix.lower() in allowed]
+
+    skipped = len(all_files) - len(files)
+    if skipped:
+        logger.warning(
+            "skipped %d file(s) in %s not matching file type '%s' (expected %s)",
+            skipped,
+            root,
+            args.file_type,
+            ", ".join(sorted(allowed)),
+        )
+    return root, files
+
+
 def parse_arguments():
-    """Parse command line arguments"""
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description="UV-Vis Spectrum Plotter - Generate spectra and color coordinates from log files"
     )
 
-    # File input
+    # --- File input ---------------------------------------------------------
     parser.add_argument(
         "--input-dir",
         type=str,
         default="data/color-prediction-neutral",
-        help="Directory containing .log files to process",
+        help="Directory containing .log/.out/.csv files to process",
     )
     parser.add_argument(
-        "--file", type=str, help="Single .log file to process (overrides --input-dir)"
+        "--file", type=str, help="Single input file to process (overrides --input-dir)"
     )
-
-    # File type : default is log from computation, but experimental spectrum is possible
     parser.add_argument(
         "--file-type",
         type=str,
         default="computation",
-        help="File type: computation, experimental",
+        choices=["computation", "experimental"],
+        help="File type: 'computation' (.log/.out, TD-DFT) or 'experimental' (.csv)",
     )
 
-    # Spectrum generation parameters
+    # --- Spectrum generation ------------------------------------------------
     parser.add_argument(
         "--sigma",
         type=float,
         default=0.4,
-        help="Broadening for Gaussian functions, in eV (default: 0.4)",
+        help="Gaussian broadening, in eV (default: 0.4)",
     )
     parser.add_argument(
         "--plot-range",
@@ -255,27 +311,40 @@ def parse_arguments():
         nargs=2,
         default=[250, 800],
         metavar=("MIN", "MAX"),
-        help="Range of spectrum to display in nm (default: 250 800)",
+        help="Wavelength range to display, in nm (default: 250 800)",
     )
     parser.add_argument(
         "--plot-grid",
         type=int,
         default=1,
-        help="Grid precision (distance between two generated points) (default: 1)",
+        help="Grid step between generated points, in nm (default: 1)",
     )
     parser.add_argument(
         "--wv-correction",
-        type=int,
+        type=float,
         default=27,
-        help="Wavelength correction shift in nm (default: 27)",
+        help="Wavelength correction shift in nm, applied only with --correct-wavelength (default: 27)",
     )
 
-    # Color calculation parameters
+    # --- Experimental CSV parsing ------------------------------------------
+    parser.add_argument(
+        "--delimiter",
+        type=str,
+        default=";",
+        help="Delimiter of experimental CSV files (default: ';')",
+    )
+    parser.add_argument(
+        "--csv-header",
+        action="store_true",
+        help="Skip the header row of experimental CSV files (default: False)",
+    )
+
+    # --- Color calculation --------------------------------------------------
     parser.add_argument(
         "--concentration",
         type=float,
         default=0.000275,
-        help="Sample concentration (default: 0.000275)",
+        help="Sample concentration in mol/L (default: 0.000275)",
     )
     parser.add_argument(
         "--path-length",
@@ -284,145 +353,182 @@ def parse_arguments():
         help="Path length in cm (default: 0.1)",
     )
 
-    # Output options
+    # --- Output options -----------------------------------------------------
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Directory for written files (default: the inputs' directory)",
+    )
     parser.add_argument(
         "--write-data",
         action="store_true",
-        help="Write CSV data files (default: False)",
+        help="Write CSV / lambda_max data files (default: False)",
     )
     parser.add_argument(
         "--plot-data",
         action="store_true",
-        help="Generate plots (default: False)",
+        help="Save PNG plots (default: False)",
+    )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Also display plots in a window (default: False)",
     )
     parser.add_argument(
         "--generate-Lab",
         action="store_true",
-        help="Generate Lab color coordinates (default: False)",
+        help="Compute and write xyz/RGB/Lab color coordinates (default: False)",
     )
     parser.add_argument(
         "--correct-wavelength",
         action="store_true",
-        help="Apply wavelength correction (default: False)",
+        help="Apply the wavelength correction (--wv-correction) (default: False)",
     )
     parser.add_argument(
         "--normalize-data",
         action="store_true",
-        help="Normalize data (default: False)",
+        help="Min-max normalize absorbances (default: False)",
     )
 
     return parser.parse_args()
 
 
-### Start of main function
+def _validate_args(args):
+    problems = []
+    if args.sigma <= 0:
+        problems.append("--sigma must be positive")
+    if args.plot_range[0] >= args.plot_range[1]:
+        problems.append("--plot-range MIN must be smaller than MAX")
+    if args.plot_grid <= 0:
+        problems.append("--plot-grid must be positive")
+    if args.concentration < 0:
+        problems.append("--concentration cannot be negative")
+    if args.path_length < 0:
+        problems.append("--path-length cannot be negative")
+    if problems:
+        for message in problems:
+            logger.error(message)
+        raise SystemExit(2)
+
+
 def main():
     args = parse_arguments()
+    _validate_args(args)
 
-    # List of files to plot
-    if args.file:
-        files_root = Path(args.file).parent
-        files = (
-            [Path(args.file)] if Path(args.file).suffix == ".log" or Path(args.file).suffix == ".csv" or Path(args.file).suffix == ".out" else []
+    files_root, files = find_input_files(args)
+    if not files:
+        logger.warning("no matching input files found")
+        return
+
+    data_is_from_computation = args.file_type == "computation"
+    output_dir = Path(args.output_dir) if args.output_dir else files_root
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not (args.write_data or args.plot_data or args.generate_Lab):
+        logger.warning(
+            "no output requested (use --write-data, --plot-data and/or --generate-Lab)"
         )
-    else:
-        files_root = Path(args.input_dir)
-        files = []
-        for file in files_root.iterdir():
-            if file.is_file() and file.suffix == ".log" or file.suffix == ".out" or file.suffix == ".csv":
-                files.append(file)
 
-    if args.file_type == "experimental":
-        data_is_from_computation = False
-    elif args.file_type == "computation":
-        data_is_from_computation = True
-
-    # General parameters
-    sigma = args.sigma
-    plot_range = args.plot_range
-    plot_grid = args.plot_grid
-    wv_correction = args.wv_correction
-    concentration = args.concentration
-    path_length = args.path_length
-
-    # What to do here
-    write_data = args.write_data
-    plot_data = args.plot_data
-    generate_Lab = args.generate_Lab
-    correct_wavelength = args.correct_wavelength
-    normalize_data = args.normalize_data
+    processed, failed = 0, 0
 
     for file in files:
-        if data_is_from_computation:
-            # Extract data and generate the line to plot
-            data = extract_data_from_logs(
-                file.as_posix(), correct_wavelength, wv_correction
-            )
-            uv_spectrum = generate_spectrum(
-                data, plot_range, plot_grid, sigma, normalization=normalize_data
-            )
-        else:
-            uv_spectrum = extract_spectrum(file.as_posix())
-
-        # Reformat data
-        wavelengths = [point[0] for point in uv_spectrum]
-        absorbances = [point[1] for point in uv_spectrum]
-
-        # Normalize absorbances if required
-        if normalize_data:
-            max = np.max(absorbances)
-            min = np.min(absorbances)
-            absorbances = [(a - min) / (max - min) for a in absorbances]
-
-        absorbance_max_idx = np.argmax(absorbances)
-        lambda_max = wavelengths[absorbance_max_idx]
-
-        if write_data:
-            csv_file = Path(files_root, file.stem + ".csv")
-            with open(csv_file, "w") as f:
-                writer = csv.writer(f, delimiter=";")
-                writer.writerows(zip(wavelengths, absorbances))
-            with open(Path(files_root, file.stem + "_max.dat"), "w") as f:
-                f.write(file.stem + " lambda_max = " + str(lambda_max) + "\n")
-
-        if plot_data:
-            # Setup the plot
-            fig, ax = plot.subplots()
-
-            ax.set_xlabel("Wavelength (nm)")
-            if normalize_data:
-                ax.set_ylabel("Normalized absorbance")
+        try:
+            if data_is_from_computation:
+                data = extract_data_from_logs(
+                    file.as_posix(), args.correct_wavelength, args.wv_correction
+                )
+                uv_spectrum = generate_spectrum(
+                    data,
+                    args.plot_range,
+                    args.plot_grid,
+                    args.sigma,
+                    normalization=False,  # normalized once, below
+                )
             else:
-                ax.set_ylabel("Absorbance")
-            ax.set_xlim(left=plot_range[0], right=plot_range[1])
-            ax.set_title(file.stem)
-            ax.plot(wavelengths, absorbances)
-            fig.show()
+                uv_spectrum = extract_spectrum(
+                    file.as_posix(),
+                    delimiter=args.delimiter,
+                    has_header=args.csv_header,
+                )
 
-            # Save image
-            img_file = Path(files_root, file.stem + ".png")
-            fig.savefig(img_file, dpi=300)
-            plot.close()
+            wavelengths = [point[0] for point in uv_spectrum]
+            absorbances = [point[1] for point in uv_spectrum]
 
-        if generate_Lab:
-            xyz = uvvis_to_xyz_color(
-                wavelengths,
-                absorbances,
-                plot_grid,
-                normalize=normalize_data,
-                length=path_length,
-                concentration=concentration,
-            )
-            rgb = xyz_to_RGB(xyz)
-            Lab = xyz_to_Lab(xyz)
+            # Normalize a single time, consistently for both data types.
+            if args.normalize_data:
+                wavelengths, absorbances = normalize_spectrum(wavelengths, absorbances)
 
-            xyz = [str(float(i)) for i in xyz]
-            rgb = [str(int(i)) for i in rgb]
-            Lab = [str(float(i)) for i in Lab]
+            if not absorbances:
+                logger.warning("%s: spectrum is empty, skipping", file.name)
+                continue
 
-            with open(Path(files_root, file.stem + "_color.dat"), "w") as f:
-                f.write(file.stem + " xyz = " + ", ".join(xyz) + "\n")
-                f.write(file.stem + " rgb = " + ", ".join(rgb) + "\n")
-                f.write(file.stem + " Lab = " + ", ".join(Lab) + "\n")
+            max_idx = int(np.argmax(absorbances))
+            lambda_max = wavelengths[max_idx]
+
+            base = output_dir / file.stem
+
+            if args.write_data:
+                _write_data(base, wavelengths, absorbances, lambda_max)
+
+            if args.plot_data:
+                _save_plot(base, wavelengths, absorbances, args, show=args.show)
+
+            if args.generate_Lab:
+                _write_color(base, wavelengths, absorbances, args)
+
+            logger.info("%s: lambda_max = %.1f nm", file.name, lambda_max)
+            processed += 1
+
+        except Exception as exc:  # keep processing the rest of the batch
+            logger.error("%s: failed (%s: %s)", file.name, type(exc).__name__, exc)
+            failed += 1
+
+    logger.info("done: %d processed, %d failed", processed, failed)
+
+
+def _write_data(base, wavelengths, absorbances, lambda_max):
+    csv_path = Path(str(base) + ".csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerows(zip(wavelengths, absorbances))
+
+    max_path = Path(str(base) + "_max.dat")
+    with open(max_path, "w") as f:
+        f.write(f"{base.name} lambda_max = {lambda_max:g}\n")
+
+
+def _save_plot(base, wavelengths, absorbances, args, show=False):
+    fig, ax = plt.subplots()
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("Normalized absorbance" if args.normalize_data else "Absorbance")
+    ax.set_xlim(left=args.plot_range[0], right=args.plot_range[1])
+    ax.set_title(base.name)
+    ax.plot(wavelengths, absorbances)
+
+    img_path = Path(str(base) + ".png")
+    fig.savefig(img_path, dpi=300)
+    if show:
+        fig.show()
+    plt.close(fig)
+
+
+def _write_color(base, wavelengths, absorbances, args):
+    xyz = uvvis_to_xyz_color(
+        wavelengths,
+        absorbances,
+        normalize=args.normalize_data,
+        length=args.path_length,
+        concentration=args.concentration,
+    )
+    rgb = xyz_to_RGB(xyz)
+    lab = xyz_to_Lab(xyz)
+
+    color_path = Path(str(base) + "_color.dat")
+    with open(color_path, "w") as f:
+        f.write(f"{base.name} xyz = " + ", ".join(f"{v:.4f}" for v in xyz) + "\n")
+        f.write(f"{base.name} rgb = " + ", ".join(str(int(v)) for v in rgb) + "\n")
+        f.write(f"{base.name} Lab = " + ", ".join(f"{v:.4f}" for v in lab) + "\n")
 
 
 if __name__ == "__main__":
